@@ -1,0 +1,16 @@
+﻿#ifndef MARCHING_CUBE_STRUCTS
+#define MARCHING_CUBE_STRUCTS
+
+struct Triangle
+{
+    float3 a;
+    float3 b;
+    float3 c;
+};
+
+struct GridPoint
+{
+    float4 value;
+};
+
+#endif

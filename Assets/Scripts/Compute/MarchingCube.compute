@@ -1,0 +1,73 @@
+﻿#pragma kernel Marching
+
+#include "MarchingCubeStructs.compute"
+#include "MarchingCubeTables.compute"
+
+int3 chunkSize;
+float threshold;
+
+// Chunk cells...
+StructuredBuffer<GridPoint> points;
+
+// Triangles generated...
+AppendStructuredBuffer<Triangle> triangles;
+
+// Convert 3D index to 1D index
+int To1D(uint3 v, int3 size)
+{
+    return v.x + v.y * size.x + v.z * size.x * size.y;
+}
+
+void GetCellPoints(int3 cellPos, out GridPoint p[8])
+{
+    for (int i = 0; i < 8; i++)
+        p[i] = points[To1D(cellPos + GRID_POINTS_POS[i], chunkSize)];
+}
+
+float3 VertexInterp(GridPoint a, GridPoint b)
+{
+    float mu = (threshold - a.value.w) / (b.value.w - a.value.w);
+    return lerp(a.value.xyz, b.value.xyz, mu);
+}
+
+[numthreads(8, 8, 8)]
+void Marching(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)chunkSize.x - 1 || id.y >= (uint)chunkSize.y - 1 || id.z >= (uint)chunkSize.z - 1) return;
+
+    int cubeindex = 0;
+
+    GridPoint points[8];
+    GetCellPoints(id, points);
+
+    for (int i = 0, j = 1; i < 8; i++, j += j)
+    {
+        if (points[i].value.w < threshold) cubeindex |= j;
+    }
+
+    /* Cube is entirely in/out of the surface */
+    if (edgeTable[cubeindex] == 0) return;
+
+    float3 vertlist[12];
+
+    for (i = 0, j = 1; i < 12; i++, j += j)
+    {
+        if (edgeTable[cubeindex] & j)
+        {
+            vertlist[i] = VertexInterp(points[VERTEX_INTERCEPT_INDEX[i].x], points[VERTEX_INTERCEPT_INDEX[i].y]);
+        }
+    }
+
+    uint index = cubeindex * 16;
+
+    for (i = 0; triTable[index + i] != -1; i += 3)
+    {
+        Triangle t;
+
+        t.a = vertlist[triTable[index + i    ]];
+        t.b = vertlist[triTable[index + i + 1]];
+        t.c = vertlist[triTable[index + i + 2]];
+
+        triangles.Append(t);
+    }
+}
